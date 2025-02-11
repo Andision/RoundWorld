@@ -1,8 +1,8 @@
 package models
 
+import "sync"
+
 type BaseState struct {
-	gameID       string
-	userList     []User
+	StateMutex   sync.RWMutex
 	roundTimeout int
-	gameTimeout  int
 }
