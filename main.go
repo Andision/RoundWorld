@@ -19,8 +19,8 @@ func main() {
 
 	// 注册 API 接口
 	r.HandleFunc("/api/login", handlers.LoginHandler).Methods("POST")
-	r.HandleFunc("/api/create", structures.JwtValidator(ctx, func(writer http.ResponseWriter, request *http.Request) {
-		handlers.CreateHandler(request.Context(), lounge, gameConfig, writer, request)
+	r.HandleFunc("/api/table", structures.JwtValidator(ctx, func(writer http.ResponseWriter, request *http.Request) {
+		handlers.CreateTableHandler(request.Context(), lounge, gameConfig, writer, request)
 	})).Methods("POST")
 
 	// 注册 WebSocket 接口

@@ -39,6 +39,8 @@ type Player interface {
 	readPump()
 	writePump()
 
+	GetUser() models.User
+
 	Send(message []byte) bool
 	Close()
 }
@@ -168,4 +170,8 @@ func (c *PlayerImpl) Send(message []byte) bool {
 
 func (c *PlayerImpl) Close() {
 	close(c.send)
+}
+
+func (c *PlayerImpl) GetUser() models.User {
+	return c.user
 }

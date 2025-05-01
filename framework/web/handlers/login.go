@@ -26,7 +26,6 @@ func checkPassword(username, password string) bool {
 // LoginHandler is the handler for the login API endpoint.
 func LoginHandler(w http.ResponseWriter, r *http.Request) {
 	var data loginData
-
 	err := json.NewDecoder(r.Body).Decode(&data)
 	if err != nil {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)

@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"github.com/Andision/RoundWorld/framework/dal"
 	"github.com/Andision/RoundWorld/framework/models"
-	"github.com/golang/glog"
 	"github.com/google/uuid"
 	"log"
 	"net/http"
@@ -23,7 +22,7 @@ const (
 type tableResponse struct {
 	TableId string      `json:"table_id"`
 	Code    int         `json:"code"`
-	Message string      `json:"Message"`
+	Message string      `json:"message"`
 	Data    interface{} `json:"data"`
 }
 
@@ -48,11 +47,11 @@ func NewTable(config models.Config, executor string) Table {
 		gameState:  config.GetNewGameState(executor),
 
 		tableId: uuid.New().String(),
-		players: make(map[Player]bool),
+		players: make(map[dal.UserIdType]Player),
 
-		broadcastQueue:  make(chan []byte),
-		messageQueue:    make(chan TableMessage),
-		unregisterQueue: make(chan Player),
+		broadcastQueue:  make(chan []byte, 256),
+		messageQueue:    make(chan TableMessage, 256),
+		unregisterQueue: make(chan Player, 256),
 	}
 }
 
@@ -63,7 +62,7 @@ type TableImpl struct {
 	gameConfig models.Config
 	gameState  models.State
 
-	players      map[Player]bool
+	players      map[dal.UserIdType]Player
 	playersMutex sync.RWMutex
 
 	broadcastQueue  chan []byte
@@ -80,19 +79,20 @@ func (t *TableImpl) Run() {
 		select {
 		case player := <-t.unregisterQueue:
 			t.playersMutex.Lock()
-			if _, ok := t.players[player]; ok {
-				delete(t.players, player)
+			playerId := player.GetUser().GetUserId()
+			if _, ok := t.players[playerId]; ok {
+				delete(t.players, playerId)
 				player.Close()
 			}
 			t.playersMutex.Unlock()
 		case message := <-t.broadcastQueue:
-			glog.Infof("broadcastQueue: %v", string(message))
+			log.Printf("broadcastQueue: %v", string(message))
 			t.playersMutex.Lock()
-			for player := range t.players {
+			for _, player := range t.players {
 				if !player.Send(message) {
-					glog.Infof("Closing send channel for player: %v", player)
+					log.Printf("Closing send channel for player: %v", player)
 					player.Close()
-					delete(t.players, player)
+					delete(t.players, player.GetUser().GetUserId())
 				}
 			}
 			t.playersMutex.Unlock()
@@ -103,6 +103,7 @@ func (t *TableImpl) Run() {
 			ctx = context.WithValue(ctx, "tableId", t.tableId)
 			ctx = context.WithValue(ctx, "playerCount", len(t.players))
 			ctx = context.WithValue(ctx, "players", t.players)
+			ctx = context.WithValue(ctx, "username", message.Sender.GetUser().GetUserName())
 
 			t.tableMessageHandler(ctx, &message)
 		default:
@@ -123,19 +124,39 @@ func (t *TableImpl) Join(ctx context.Context, w http.ResponseWriter, r *http.Req
 
 	username := ctx.Value("username")
 	if username == nil {
-		http.Error(w, "Username not found", http.StatusBadRequest)
+		http.Error(w, "Username not found in context", http.StatusBadRequest)
 		return
 	}
 
-	user := dal.NewUserImpl(username.(string))
-
-	player := NewPlayer(user, t, w, r)
-	if player == nil {
-		http.Error(w, "Failed to create player", http.StatusInternalServerError)
+	user, err := dal.NewUserImplByName(username.(string))
+	if err != nil {
+		log.Println(err)
+		http.Error(w, "User not found in db", http.StatusBadRequest)
+		return
+	}
+	if t.players[user.GetUserId()] != nil {
+		http.Error(w, "User already exists", http.StatusBadRequest)
+		return
 	}
 
-	t.players[player] = true
-	log.Printf("player %s joined", username)
+	newPlayer := NewPlayer(user, t, w, r)
+	if newPlayer == nil {
+		http.Error(w, "Failed to create newPlayer", http.StatusInternalServerError)
+	}
+
+	t.players[newPlayer.GetUser().GetUserId()] = newPlayer
+	log.Printf("newPlayer %s joined", username)
+
+	players := []dal.UserIdType{}
+	for playerId := range t.players {
+		players = append(players, playerId)
+	}
+	err = t.gameState.UpdatePlayers(ctx, players)
+	if err != nil {
+		http.Error(w, "Failed to update players, err: "+fmt.Sprintf("%v", err), http.StatusInternalServerError)
+		return
+	}
+
 	return
 }
 
@@ -149,10 +170,13 @@ func (t *TableImpl) SendUnregister(player Player) bool {
 }
 
 func (t *TableImpl) SendMessage(msg TableMessage) bool {
+	log.Printf("[TableImpl] SendMessage: %v", msg)
 	select {
 	case t.messageQueue <- msg:
+		log.Println("[TableImpl] Message sent")
 		return true
 	default:
+		log.Println("[TableImpl] Message dropped")
 		return false
 	}
 }
@@ -167,7 +191,7 @@ func (t *TableImpl) tableMessageHandler(ctx context.Context, message *TableMessa
 			tableResponse{
 				TableId: t.tableId,
 				Code:    tableResponseCodeError,
-				Message: "parse error",
+				Message: fmt.Sprintf("parse error, err:%v", err),
 				Data:    nil,
 			})
 		if err != nil {
@@ -177,9 +201,6 @@ func (t *TableImpl) tableMessageHandler(ctx context.Context, message *TableMessa
 		sender.Send(rawResponse)
 		return
 	}
-
-	t.gameState.Lock()
-	defer t.gameState.Unlock()
 
 	valid, err := t.gameState.Validate(ctx, parse)
 	if err != nil {
