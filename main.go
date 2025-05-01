@@ -2,7 +2,8 @@ package main
 
 import (
 	"context"
-	"github.com/Andision/RoundWorld/framework/web"
+	"github.com/Andision/RoundWorld/framework/web/handlers"
+	"github.com/Andision/RoundWorld/framework/web/structures"
 	"github.com/Andision/RoundWorld/games"
 	"github.com/gorilla/mux"
 	"log"
@@ -10,22 +11,22 @@ import (
 )
 
 func main() {
-	lounge := web.NewLounge()
+	lounge := structures.NewLounge()
 	gameConfig := games.NewConfigGames()
 	ctx := context.Background()
 
 	r := mux.NewRouter()
 
 	// 注册 API 接口
-	r.HandleFunc("/api/login", web.LoginHandler).Methods("POST")
-	r.HandleFunc("/api/create", web.JwtValidator(ctx, func(writer http.ResponseWriter, request *http.Request) {
-		web.CreateHandler(request.Context(), lounge, gameConfig, writer, request)
+	r.HandleFunc("/api/login", handlers.LoginHandler).Methods("POST")
+	r.HandleFunc("/api/create", structures.JwtValidator(ctx, func(writer http.ResponseWriter, request *http.Request) {
+		handlers.CreateHandler(request.Context(), lounge, gameConfig, writer, request)
 	})).Methods("POST")
 
 	// 注册 WebSocket 接口
-	r.HandleFunc("/ws", web.JwtValidator(ctx, func(w http.ResponseWriter, r *http.Request) {
+	r.HandleFunc("/ws", structures.JwtValidator(ctx, func(w http.ResponseWriter, r *http.Request) {
 		log.Println("ws")
-		web.JoinHandler(r.Context(), lounge, w, r)
+		handlers.JoinHandler(r.Context(), lounge, w, r)
 	}))
 
 	log.Println("Server started on :8080")

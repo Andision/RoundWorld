@@ -1,7 +1,8 @@
-package web
+package handlers
 
 import (
 	"encoding/json"
+	"github.com/Andision/RoundWorld/framework/web/structures"
 	"net/http"
 	"strings"
 )
@@ -33,16 +34,21 @@ func LoginHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if checkPassword(data.Username, data.Password) {
-		token, err := generateJwt(data.Username)
+		token, err := structures.GenerateJwt(data.Username)
 		if err != nil {
 			http.Error(w, "Failed to generate JWT", http.StatusInternalServerError)
 			return
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]string{
+		err = json.NewEncoder(w).Encode(map[string]string{
 			"token": token,
 		})
+
+		if err != nil {
+			http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+			return
+		}
 	} else {
 		http.Error(w, "Invalid username or password", http.StatusUnauthorized)
 	}

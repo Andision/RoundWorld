@@ -1,4 +1,4 @@
-package web
+package structures
 
 import (
 	"context"
@@ -15,8 +15,8 @@ type Claims struct {
 	jwt.RegisteredClaims
 }
 
-// generateJwt is a mock function to generate a JWT token.
-func generateJwt(username string) (string, error) {
+// GenerateJwt is a mock function to generate a JWT token.
+func GenerateJwt(username string) (string, error) {
 	claims := Claims{
 		Username: username,
 		RegisteredClaims: jwt.RegisteredClaims{
